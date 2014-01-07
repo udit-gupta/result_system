@@ -1,4 +1,3 @@
-
 Description:
     An enhanced and efficient College Result System, to reflect beauty of open source tools
     
@@ -8,7 +7,8 @@ Description:
     This project also highligths the improtance of good software engineering work.
 
 
-Directroy Structur/Flow:
+Directroy StructurE/Flow:
+    
     New Developement                - The Actual Backbone of System include new improved
                                        scripts, documentation and UML Diagrams.
         Documentation               - Contains whole documentation, the most important aspect of this project
