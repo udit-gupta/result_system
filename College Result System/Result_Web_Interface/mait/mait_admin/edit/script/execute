@@ -1,0 +1,1 @@
+cd script; ./verify ../Result_PDFs/2007_027_04.pdf 2007 027 04 && ./work Batch/2007/027/04/

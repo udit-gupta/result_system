@@ -1,0 +1,19 @@
+Problem of Browsing the PDF
+---------------------------
+> If the admin browses the pdf from home then it will be local to the Admin's home computer but we planned it to be local to the server.
+> SO, we have to make this a upload rather than just a browse
+> Also, if that has to be done then remote upload facility can also be given by using wget
+> We have to have a script that will manage the upload and have to keep the pdfs safe and organised under a directory structure
+> This will initiate the verify script
+
+
+Problem if deleted old result and re-added
+------------------------------------------
+> If a result of some previous batch is deleted
+> Then the converned tables are dropped
+> When the same is re-added it forms correct information for the regular students but fails in info about the reappears
+> The reappear info is provided by later batch results
+> This must run the reappear script of the all later batches
+
+Warning : Minors, Majors & Total all can be non-numeric
+Warning : Minor maximum marks can also be non-numeric

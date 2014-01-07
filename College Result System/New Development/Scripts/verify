@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Usage: verify <pdf> <batch> <branch> <sem>
+
+if [ $# -ne 4 ]
+then
+	echo "Usage: verify <pdf> <batch> <branch> <sem>"
+	exit 1
+fi
+
+pdf="$1"
+batch="$2"
+branch="$3"
+sem="$4"
+
+batch_folder="Batch/$batch"
+branch_folder="$batch_folder/$branch"
+sem_folder="$branch_folder/$sem"
+txt="result.txt"
+path="$sem_folder/$txt"
+
+# Check folder
+if [ ! -d "$sem_folder" ]
+then
+	mkdir -p "$sem_folder"
+fi
+
+# Convert PDF to TXT
+pdftotext -layout $pdf "$sem_folder/$txt"
+
+# Start Verifying
+line=`cat "$path" | fgrep 'Result Summary' | fgrep -m1 'Examination: REGULAR'`
+BRANCH=`echo $line | sed 's/^.*Programme Code: \([0-9]*\) .*$/\1/'`
+SEM=`echo $line | sed 's/^.*Sem.\/Year: \([0-9]*\) .*$/\1/'`
+BATCH=`echo $line | sed 's/^.*Batch: \([0-9]*\) .*$/\1/'`
+
+if [ $BATCH -eq $batch ] && [ $BRANCH -eq $branch ] && [ $SEM -eq $sem ]
+then
+	exit 0
+else
+	rm -f "$path"
+	exit 1
+fi

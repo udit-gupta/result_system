@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# Usage: extract_data <sem_folder>
+
+if [ $# -ne 1 ]
+then
+	echo "Usage: extract_data <sem_folder>"
+	exit 1
+fi
+
+folder="$1"
+path="$folder/result.txt"
+regular="$folder/regular.txt"
+reappear="$folder/reappear.txt"
+institute='MAHARAJA AGRASEN INSTITUTE OF TECHNOLOGY'
+
+################################################# regular.txt #############################################
+# Getting line numbers for useful part of the txt 
+heads=`cat "$path" | fgrep -n -A1 'Result Summary' | fgrep -A1 'Examination: REGULAR' | fgrep -B1 -A3 "$institute" | sed -n -e '1p' -e '4p' | awk -F: '{print $1}'`
+START=`echo $heads | cut -d ' ' -f1`
+END=`echo $heads | cut -d ' ' -f2`
+END=`expr $END - 1`
+
+# Getting the useful data from the txt
+data=`cat "$path" | sed -n "$START,$END p" > "$regular"`
+###########################################################################################################
+
+################################################# reappear.txt #############################################
+# Getting line numbers and the useful data
+numbers=`(cat $path | fgrep -n -A1 'Result Summary' | fgrep -A1 'Examination: REAPPEAR' && echo -- && cat $path | fgrep -n -A1 'Result Summary' | fgrep -A1 -m1 'Examination: REGULAR') | fgrep -B1 -A3 "$institute" | awk '/^[0-9]+:/ {print $1}'`
+numbers=`echo $numbers | sed -e 's/:/ /g' -e 's/  / /g'`
+n=`echo $numbers | wc -w`
+n=`expr $n / 2`
+for i in `seq $n`
+do
+	numbers=`echo $numbers | sed "s/ /:/$i"`
+done
+
+if [ -f "$reappear" ]
+then
+	rm -f "$reappear"
+fi
+
+for i in $numbers
+do
+	START=`echo $i | cut -d: -f1`
+	END=`echo $i | cut -d: -f2`
+	END=`expr $END - 1`
+	data=`cat $path | sed -n "$START,$END p" >> $reappear`
+done
+###########################################################################################################

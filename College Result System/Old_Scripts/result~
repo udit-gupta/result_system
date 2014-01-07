@@ -1,0 +1,210 @@
+#!/bin/bash
+
+# By: Yugal Jindle
+
+batch="2007"
+roll="$2"
+institute="MAHARAJA AGRASEN INSTITUTE OF TECHNOLOGY"
+# Assumed paper_ids to be of 5 digit always
+# Assumed Credits per paper is in single digit
+
+pdf=$1
+pdf_check=`echo $pdf | grep '\.pdf'`
+
+if [ ! $pdf ] || [ ! $roll ]
+then
+	echo "Usage: $(basename $0) <pdf> <roll>"
+	exit 1
+fi
+
+roll_length=`expr length $roll`
+echo $roll | grep '[^0-9]' 1>/dev/null 2>/dev/null
+if [ $? -ne 1 ] || [ $roll_length -ne 10 ]
+then
+	echo "Invalid Roll Number !"
+	exit 1
+fi
+
+txt=`echo $pdf | sed 's/\.pdf/\.txt/g'`
+
+if [ ! -f "$txt" ]
+then
+	pdftotext -layout $pdf
+	if [ $? -ne 0 ]
+	then
+		echo "Error converting $pdf !!"
+		exit 1
+	fi
+fi
+
+selectfrom()
+{
+	count=1
+	for i in $1
+	do
+		if [ $count -eq $2 ]
+		then
+			echo -n $i
+		fi
+		count=`expr $count + 1`
+	done
+}
+
+line1=`grep " $roll " $txt`
+if [ $? -ne 0 ]
+then
+	echo "Roll number not found !"
+	exit 1
+fi
+line2=`grep -A 1 " $roll " $txt | tail -n1`
+line3=`grep -A 2 " $roll " $txt | tail -n1`
+line4=`grep -A 4 " $roll " $txt | tail -n1`
+
+
+# Data from line1
+roll=$roll  # Roll Number
+paper_ids=`echo $line1 | sed 's/\ /:/' | cut -d: -f2 | sed -e 's/\ [0-9]*$//' -e 's/(.)//g'`
+paper_credits=`echo $line1 | sed 's/\ /:/' | cut -d: -f2 | sed -e 's/\ ..$//' -e 's/.....(//g' -e 's/)//g'`
+credits_earned=`echo $line1 | sed 's/.*)\ //g'`
+
+
+# Data from line2
+name=$line2
+
+
+# Data from line3
+count=0
+marks_breakup=""
+while true
+do
+	count=`expr $count + 1`
+	n1=`selectfrom "$line3" $count`
+	count=`expr $count + 1`
+	n2=`selectfrom "$line3" $count`
+	if [ ! $n1 ] || [ ! $n2 ]
+	then
+		break;
+	else
+		marks_breakup="$marks_breakup $n1:$n2"
+	fi
+done
+marks_breakup_absent="$marks_breakup"
+marks_breakup=`echo $marks_breakup | sed -e 's/A/0/g' -e 's/-/0/g'`
+
+# Data from line4
+marks=`echo $line4 | sed 's/\ /:/' | cut -d: -f2 | sed 's/\*//g'`
+marks=`echo $marks | sed 's/A/0/g'`
+
+# To Get Subject Codes and Subject Names
+paper_codes=""
+papers=""
+paper_types=""
+lines_from_top="35"
+
+for id in $paper_ids
+do
+	paper_codes="$paper_codes $(grep -A $lines_from_top "Batch: $batch" $txt | grep -m 1 -A  $lines_from_top "$institute" | grep $id | sed -e 's/\ \ */\ /g' -e s/\ ..\ $id\ // -e s/\ /:/ | cut -d: -f1)"
+	papers="$papers $(grep -A $lines_from_top "Batch: $batch" $txt | grep -m 1 -A $lines_from_top "$institute" | grep $id | sed -e 's/\ \ */\ /g' -e s/\ ..\ $id\ // -e s/\ /:/ | cut -d: -f2 | sed -e 's/ [0-9].*//' -e 's/ /_/g')"
+	paper_types="$paper_types $(grep -A $lines_from_top "Batch: $batch" $txt | grep -m 1 -A $lines_from_top "$institute" | grep $id | sed -e 's/\ \ */\ /g' -e s/\ ..\ $id\ // -e s/\ /:/ | cut -d: -f2 | sed 's/ [0-9] /:/' | cut -d: -f2 | sed 's/ .*//')"
+done
+paper_types=`echo $paper_types | sed 's/PRACTICAL/LAB/g'`
+
+# Preparing Output
+paper_count=`count=0;for i in $paper_ids;do count=$(expr $count + 1);done;echo $count`
+line="-------------------------------------------------------------------------------------------------------------------------"
+name=`echo $name | sed 's/ /_/g'`
+institute=`echo $institute | sed 's/ /_/g'`
+name_roll="Name: $name Roll.No: $roll"
+batch_institute="Batch: $batch Institute: $institute"
+headings="Code Subject Type Int. Ext. Total Status Credits"
+total_credits=0
+for i in $paper_credits
+do
+	total_credits=`expr $total_credits + $i`
+done
+obt_marks=0
+for i in $marks
+do
+	obt_marks=`expr $obt_marks + $i`
+done
+max_marks=`expr $paper_count \* 100`
+totmarks_credits="Total_Marks: $obt_marks of $max_marks Total_Credits: $credits_earned of $total_credits"
+
+
+echo $line
+echo $name_roll | awk '{printf("%-5s %-50s %-8s %-12s",$1,$2,$3,$4)}'
+echo
+echo $batch_institute | awk '{printf("%-6s %-49s %-10s %-50s",$1,$2,$3,$4)}'
+echo
+echo
+echo $line
+echo $headings | awk '{printf("%-10s %-45s %-10s %-5s %-5s %-10s %-10s %-10s",$1,$2,$3,$4,$5,$6,$7,$8)}'
+echo
+echo $line
+subject_credits=""
+for i in `seq 1 $paper_count` 
+do
+	int_ext=`selectfrom "$marks_breakup" $i`
+	int=`echo $int_ext | cut -d: -f1`
+	ext=`echo $int_ext | cut -d: -f2`
+	tot=`expr $int + $ext`
+	int_ext=`selectfrom "$marks_breakup_absent" $i`
+	int=`echo $int_ext | cut -d: -f1`
+	ext=`echo $int_ext | cut -d: -f2`
+	tot_marks=`selectfrom "$marks" $i`
+	if [ $tot -lt $tot_marks ]
+	then
+		tot="$tot_marks[$tot]"
+		stat="PASS*"
+		c=`selectfrom "$paper_credits" $i`
+		subject_credits="$subject_credits $c"
+	elif [ $tot -lt 50 ]
+	then
+		stat="FAIL"
+		c=0
+		subject_credits="$subject_credits $c"
+		if [ $ext = "A" ]
+		then
+			tot="A"
+		fi
+	else
+		stat="PASS"
+		c=`selectfrom "$paper_credits" $i`
+		subject_credits="$subject_credits $c"
+	fi
+	code=`selectfrom "$paper_codes" $i`
+	subject=`selectfrom "$papers" $i`
+	pcredit=`selectfrom "$paper_credits" $i`
+	pcredit_obt=`selectfrom "$subject_credits" $i`
+	ptype=`selectfrom "$paper_types" $i`
+	paper_result="$code $subject $ptype $int $ext $tot $stat $pcredit_obt of $pcredit"
+	echo $paper_result | awk '{printf("%-10s %-45s %-10s %-5s %-5s %-10s %-10s %-2s %-2s %-2s",$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)}'
+	echo
+done
+percent=`echo "scale=3;$obt_marks/$max_marks*100" | bc`
+credit_obt_marks=0
+credit_max_marks=0
+for i in `seq 1 $paper_count`
+do
+	c=`selectfrom "$subject_credits" $i`
+	m=`selectfrom "$marks" $i`
+	cm=`expr $c \* $m`
+	mm=`expr $c \* 100`
+	credit_obt_marks=`expr $credit_obt_marks + $cm`
+	credit_max_marks=`expr $credit_max_marks + $mm`
+done
+if [ $credit_obt_marks -eq 0 ]
+then
+	credit_percent="--"
+else
+	credit_percent=`echo "scale=3;$credit_obt_marks/$credit_max_marks*100" | bc`
+fi
+percentages="Percentage: $percent% Credit_Percentage: $credit_percent% ($credit_obt_marks of $credit_max_marks)"
+echo $line
+echo
+echo $totmarks_credits | awk '{printf("%-12s %-3s %-2s %-20s %-14s %-2s %-2s %-2s",$1,$2,$3,$4,$5,$6,$7,$8)}'
+echo
+echo $percentages | awk '{printf("%-12s %-27s %-18s %-5s %-2s %-2s %-2s",$1,$2,$3,$4,$5,$6,$7)}' 
+echo
+echo
+echo $line

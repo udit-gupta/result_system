@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# Usage: extract_details <sem_folder>
+
+if [ $# -ne 1 ]
+then
+	echo "Usage: extract_details <sem_folder>"
+	exit 1
+fi
+
+user="root" # SQL Database User
+password="krishna" # SQL Database Password
+
+# Variable for Tables
+##########################
+#	PAPER_IDS (Array)
+#	CODES (Array)
+#	SUBJECT_NAMES (Array)
+#	CREDITS (Array)
+#	TYPES (Array)
+#	MINORS (Array)
+#	MAJORS (Array)
+#	MAXS (Array)
+#	PASS (Array)
+##########################
+
+folder="$1"
+regular="$folder"/regular.txt
+
+# Other Details
+BATCH=`echo $folder | sed 's/Batch\/\([0-9]*\)\/.*/\1/'`
+BRANCH=`echo $folder | sed 's/Batch\/[0-9]*\/\([0-9]*\)\/.*/\1/'`
+SEM=`echo $folder | sed 's/Batch\/.*\/\([0-9]*\)\/$/\1/'`
+
+# Lines range for details
+START=`fgrep -n 'Paper ID' $regular | cut -d: -f1`;START=`expr $START + 2`
+END=`fgrep -n '*R/A:' $regular | cut -d: -f1`;END=`expr $END - 2`
+
+###### Extracting Details ######
+array_index=0
+for n in `seq $START 2 $END`
+do
+	line=`sed -n "$n p" $regular`
+	foo=`echo $line | awk '{for(i=NF;i>0;i--) print $i}'`;foo=`echo $foo | awk '{print $5}'`;if [ "$foo" == "0/0" ];then continue;fi
+	PAPER_IDS[$array_index]=`echo $line | awk '{print $2}'`
+	CODES[$array_index]=`echo $line | awk '{print $3}'`
+	SUBJECT_NAMES[$array_index]=`echo $line | sed -e "s/.*${CODES[$array_index]} //" -e 's/ [0-9] .*//'`
+	line=`echo $line | sed "s/.*${SUBJECT_NAMES[$array_index]} \([0-9] .*\)/\1/" | awk '{print $1,$2,$6,$7,$8,$9}'`
+	CREDITS[$array_index]=`echo $line | awk '{print $1}'`
+	TYPES[$array_index]=`echo $line | awk '{print $2}'`
+	MINORS[$array_index]=`echo $line | awk '{print $3}'`
+	MAJORS[$array_index]=`echo $line | awk '{print $4}'`
+	MAXS[$array_index]=`echo $line | awk '{print $5}'`
+	PASS[$array_index]=`echo $line | awk '{print $6}'`
+	array_index=`expr $array_index + 1`
+done
+array_index=`expr $array_index - 1`
+
+################################### Make 2 Tables and Populate 1 of them  ###################################
+# Creating Tables
+db="CREATE DATABASE IF NOT EXISTS _$BATCH;"
+use="USE _$BATCH;"
+table1="CREATE TABLE _${BRANCH}_${SEM}_papers (paper_id varchar(8) NOT NULL,code varchar(10) NOT NULL,subject_name varchar(150) NOT NULL, \
+credits tinyint(2) NOT NULL,type varchar(12) NOT NULL,pass int(2) NOT NULL,max int(3) NOT NULL,minor varchar(5) NOT NULL,major varchar(5) NOT NULL, \
+PRIMARY KEY (paper_id));"
+paper_ids_entry=""
+for i in `seq 0 $array_index`;do paper_ids_entry="${paper_ids_entry}_${PAPER_IDS[$i]} varchar(15),";done
+table2="CREATE TABLE _${BRANCH}_${SEM}_students (roll_no varchar(10) NOT NULL,name varchar(80) NOT NULL,$paper_ids_entry \
+obtained_credits_marks int(5) NOT NULL,total_credits_marks int(5) NOT NULL,normal_percent decimal(5,2) NOT NULL,credit_percent decimal(5,2) NOT NULL, \
+obtained_marks int(5) NOT NULL,total_marks int(5) NOT NULL,obtained_credits int(3) NOT NULL,total_credits int(3) NOT NULL, \
+cleared_reappears int(3) NOT NULL,remaining_reappears int(3) NOT NULL,reappear_subjects_remaining varchar(100), \
+reappear_subjects_cleared varchar(100),PRIMARY KEY (roll_no));"
+# Populating branch_sem_papers
+populate=""
+for i in `seq 0 $array_index`
+do
+	populate="$populate INSERT INTO _${BRANCH}_${SEM}_papers values('"${PAPER_IDS[$i]}"','"${CODES[$i]}"','"${SUBJECT_NAMES[$i]}"',"
+	populate="${populate}"${CREDITS[$i]}",'"${TYPES[$i]}"',"${PASS[$i]}","${MAXS[$i]}",'"${MINORS[$i]}"','"${MAJORS[$i]}"');"
+done
+../../../../../bin/mysql --user=$user --password=$password -e "$db $use $table1 $table2 $populate"
+#############################################################################################################

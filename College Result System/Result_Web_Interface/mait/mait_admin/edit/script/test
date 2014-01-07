@@ -1,0 +1,1 @@
+time (./verify ../Result_PDFs/2007_027_06.pdf 2007 027 06 && ./work Batch/2007/027/06/) 

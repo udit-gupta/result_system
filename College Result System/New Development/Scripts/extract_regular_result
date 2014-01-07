@@ -1,0 +1,120 @@
+#!/bin/bash
+
+# Usage: extract_regular_result <sem_folder> <roll_number>
+
+if [ $# -ne 2 ]
+then
+	echo "Usage: extract_regular_result <sem_folder> <roll_number>"
+	exit 1
+fi
+
+max=100 # Assumed that every paper is of 100 Marks
+pass=50 # Assumed that every paper pass marks are 50
+
+user="db_user" # SQL Database User
+password="db_passwd" # SQL Database Password
+
+# Varible for Database
+######################################
+#	ROLL
+#	NAME
+#	OBTAINED_CREDITS
+#	TOTAL_CREDITS
+#	MARKS (ARRAY)
+#	OBTAINED_MARKS
+#	TOTAL_MARKS
+#	OBTAINED_CREDITS_MARKS
+#	TOTAL_CREDITS_MARKS
+#	NORMAL_PERCENT
+#	CREDIT_PERCENT
+#	REMAINING_REAPPEARS
+#	CLEARED_REAPPEARS
+#	REAPPEAR_SUBJECTS_REMAINING
+#	REAPPEAR_SUBJECTS_CLEARED
+######################################
+
+folder="$1"
+regular="$folder"/regular.txt
+ROLL="$2"
+
+# Other Details
+BATCH=`echo $folder | sed 's/Batch\/\([0-9]*\)\/.*/\1/'`
+BRANCH=`echo $folder | sed 's/Batch\/[0-9]*\/\([0-9]*\)\/.*/\1/'`
+SEM=`echo $folder | sed 's/Batch\/.*\/\([0-9]*\)\/$/\1/'`
+
+# Result Lines
+line1=`fgrep " $ROLL " "$regular"`
+line2=`fgrep -A1 " $ROLL " "$regular" | tail -n1`
+line3=`fgrep -A2 " $ROLL " "$regular" | tail -n1`
+line4=`fgrep -A4 " $ROLL " "$regular" | tail -n1`
+
+# Process line1
+OBTAINED_CREDITS=`echo $line1 | awk '{print $NF}'`
+credits=`echo $line1 | sed -e 's/^[0-9]* \(.*\) [0-9]*$/\1/' -e 's/[0-9]*(\([0-9]*\))/\1/g'`
+TOTAL_CREDITS=`echo $credits | sed 's/\([0-9][^$]\)/\1+ /g' | bc`
+PAPER_IDS=`echo $line1 | sed -e 's/^[0-9]* \(.*\) [0-9]*$/\1/' -e 's/\([0-9]*\)([0-9]*)/\1/g'`
+
+# Process line2
+NAME=`echo $line2 | sed 's/^ *\(.*\) *$/\1/'`
+
+# Process line3
+MINORS=$line3
+n=`echo $MINORS | wc -w`;n=`expr $n / 2`
+for i in `seq $n`
+do
+        MINORS=`echo $MINORS | sed "s/ /:/$i"`
+done
+
+# Process line4
+MAJORS=`echo $line4 | sed 's/^[0-9]* \(.*\)/\1/'`
+
+minors=($MINORS);majors=($MAJORS)
+count=`echo $PAPER_IDS | wc -w`;count=`expr $count - 1`
+for i in `seq 0 $count`;do MARKS[$i]=`echo "${minors[$i]}:${majors[$i]}"`;done
+
+OBTAINED_MARKS=0
+for i in $MAJORS; do foo=`echo $i | grep '^[^0-9]'`; if [ ! $foo ]; then i=`echo $i | sed 's/*//'`;OBTAINED_MARKS=`expr $OBTAINED_MARKS + $i`; fi; done
+
+TOTAL_MARKS=`expr $max \* $(echo $PAPER_IDS | wc -w)`
+PAPER_IDS=($PAPER_IDS)     # Now, PAPER_IDS is an Array
+
+OBTAINED_CREDITS_MARKS=0
+REMAINING_REAPPEARS=0
+REAPPEAR_SUBJECTS_REMAINING=""
+c=($credits);m=($MAJORS)
+for i in `seq 0 $count`
+do
+	foo=`echo ${m[$i]} | grep '^[^0-9]'`
+	if [ ! $foo ]
+	then
+		m[$i]=`echo ${m[$i]} | sed 's/*//'`
+		if [ ${m[$i]} -ge $pass ]
+		then
+			OBTAINED_CREDITS_MARKS=`expr $OBTAINED_CREDITS_MARKS + ${c[$i]} \* ${m[$i]}`
+		else
+			REMAINING_REAPPEARS=`expr $REMAINING_REAPPEARS + 1`
+			REAPPEAR_SUBJECTS_REMAINING="${REAPPEAR_SUBJECTS_REMAINING}:${PAPER_IDS[$i]}"
+		fi
+	fi
+done
+
+REAPPEAR_SUBJECTS_CLEARED=""
+
+TOTAL_CREDITS_MARKS=`expr $max \* $OBTAINED_CREDITS`
+
+NORMAL_PERCENT=`if [ $TOTAL_MARKS -ne 0 ]; then echo "scale=2;$OBTAINED_MARKS*100/$TOTAL_MARKS" | bc; else echo 0; fi;`
+
+CREDIT_PERCENT=`if [ $TOTAL_CREDITS_MARKS -ne 0 ]; then echo "scale=2;$OBTAINED_CREDITS_MARKS*100/$TOTAL_CREDITS_MARKS" | bc; else echo 0; fi;`
+
+CLEARED_REAPPEARS=0
+
+##################################### POPULATE THE DATABASE #######################################
+use="USE _$BATCH;"
+for i in `seq 0 $count`;do ids="$ids ${PAPER_IDS[$i]}";done
+ids=`echo $ids | sed -e 's/[0-9]*/_&/g' -e 's/ /,/g'`
+populate="INSERT INTO _${BRANCH}_${SEM}_students (roll_no,name,$ids,obtained_credits_marks,total_credits_marks,normal_percent,credit_percent,obtained_marks,total_marks,obtained_credits,total_credits,cleared_reappears,remaining_reappears,reappear_subjects_remaining,reappear_subjects_cleared) values('"$ROLL"','"$NAME"',"
+for i in `seq 0 $count`;do populate="${populate}'"${MARKS[$i]}"',";done
+populate="${populate}$OBTAINED_CREDITS_MARKS,$TOTAL_CREDITS_MARKS,$NORMAL_PERCENT,$CREDIT_PERCENT,$OBTAINED_MARKS,$TOTAL_MARKS,$OBTAINED_CREDITS,"
+populate="${populate}$TOTAL_CREDITS,$CLEARED_REAPPEARS,$REMAINING_REAPPEARS,'"${REAPPEAR_SUBJECTS_REMAINING}"','"${REAPPEAR_SUBJECTS_CLEARED}"');"
+../../../../../bin/mysql --user=$user --password=$password -e "$use $populate"
+###################################################################################################

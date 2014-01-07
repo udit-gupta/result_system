@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Usage: extract_roll <sem_folder>
+
+if [ $# -ne 1 ]
+then
+	echo "Usage: extract_roll <sem_folder>"
+	exit 1
+fi
+
+folder="$1"
+regular="$folder/regular.txt"
+reappear="$folder/reappear.txt"
+regular_rollnumber="$folder/regular_rollnumber.txt"
+reappear_rollnumber="$folder/reappear_rollnumber.txt"
+
+# For Regular
+cat "$regular" | egrep -o ' [0-9]{10} ' > "$regular_rollnumber"
+
+# For Re-appear
+cat "$reappear" | egrep -o ' [0-9]{10} ' > "$reappear_rollnumber"

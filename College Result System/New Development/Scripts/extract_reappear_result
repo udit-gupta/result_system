@@ -1,0 +1,189 @@
+#!/bin/bash
+
+# Usage: extract_reappear_result <sem_folder> <roll_number>
+
+if [ $# -ne 2 ]
+then
+        echo "Usage: extract_reappear_result <sem_folder> <roll_number>"
+        exit 1
+fi
+
+max=100 # Assumed that every paper is of 100 Marks
+pass=50 # Assumed that every paper pass marks are 50
+
+user="db_user" # SQL Database User
+password="db_passwd" # SQL Database Password
+
+# Variables to Update the old table
+####################################################################################################################################################
+#       ROLL			(To identify student)												    
+#       OBTAINED_CREDITS	(Add to original entry)												    
+#       MARKS (ARRAY)		(Marks of passed subjects)											    
+#       OBTAINED_MARKS		(Query subject marks & calculate this) ---- SQL NEEDED								    
+#       OBTAINED_CREDITS_MARKS	(Add to original entry)												    
+#       TOTAL_CREDITS_MARKS	(Add to original entry)												    
+#       NORMAL_PERCENT		(Query OBT_MARKS & TOT_MARKS then calculate) ---- SQL NEEDED							    
+#       CREDIT_PERCENT		(Query OBT_CREDIT_MARKS & TOT_CREDITS MARKS then calculate) ---- SQL NEEDED				 	    
+#       CLEARED_REAPPEARS	(Add to original CLEARED_REAPPEARS)				    
+#	REMAINING_REAPPEARS	(Subtract CLEARED_REAPPEARS from original value of REMAINING_REAPPEARS)
+#       REAPPEAR_SUBJECTS_REMAINING (Query old value and then manipulate value) ---- SQL NEEDED							    
+#       REAPPEAR_SUBJECTS_CLEARED (Query old value and then append to that value) ----	SQL NEEDED						    
+####################################################################################################################################################
+
+folder="$1"
+reappear="$folder"/reappear.txt
+ROLL="$2"
+
+# Check if this students previous records are available or not
+################################################################################
+roll_line_no=`cat $reappear | fgrep -n $ROLL | cut -d: -f1`
+batch_line=`cat $reappear | sed "1,$roll_line_no !d" | tac | fgrep -m1 Batch:`
+BATCH_OF_STUDENT=`echo $batch_line | sed 's/^.* Batch: \([0-9]*\) .*$/\1/'`
+query="SHOW DATABASES LIKE '_"$BATCH_OF_STUDENT"';"
+check=`../../../../../bin/mysql --user=$user --password=$password -e "$query" | tail -n1`
+if [ ! $check ];then exit 1;fi
+################################################################################
+
+# Other Details
+BRANCH=`echo $folder | sed 's/Batch\/[0-9]*\/\([0-9]*\)\/.*/\1/'`
+SEM=`echo $folder | sed 's/Batch\/.*\/\([0-9]*\)\/$/\1/'`
+
+# Result Lines
+line1=`fgrep " $ROLL " "$reappear"`
+line3=`fgrep -A2 " $ROLL " "$reappear" | tail -n1`
+line4=`fgrep -A4 " $ROLL " "$reappear" | tail -n1`
+
+# Process line1
+OBTAINED_CREDITS=`echo $line1 | awk '{print $NF}'`
+
+credits=`echo $line1 | sed -e 's/^[0-9]* \(.*\) [0-9]*$/\1/' -e 's/[0-9]*(\([0-9]*\))/\1/g'`
+PAPER_IDS=`echo $line1 | sed -e 's/^[0-9]* \(.*\) [0-9]*$/\1/' -e 's/\([0-9]*\)([0-9]*)/\1/g'`
+
+# Process line3
+MINORS=$line3
+n=`echo $MINORS | wc -w`;n=`expr $n / 2`
+for i in `seq $n`
+do
+        MINORS=`echo $MINORS | sed "s/ /:/$i"`
+done
+
+# Process line4
+MAJORS=`echo $line4 | sed 's/^[0-9]* \(.*\)/\1/'`
+
+CLEARED_REAPPEARS=0
+
+# Checking for Pass & updating crdits,PAPER_IDS,MINORS & MAJORS
+#################################################################################
+count=`echo $PAPER_IDS | wc -w`;count=`expr $count - 1`
+credits=($credits);PAPER_IDS=($PAPER_IDS);MINORS=($MINORS);MAJORS=($MAJORS)
+for i in `seq 0 $count`
+do
+	foo=`echo ${MAJORS[$i]} | grep '^[^0-9]'`
+	if [ ! $foo ]
+	then
+		foo2=`echo ${MAJORS[$i]} | sed 's/*//'`
+		if [ ! $foo2 -ge $pass ]
+		then
+			MAJORS[$i]=""
+			MINORS[$i]=""
+			PAPER_IDS[$i]=""
+			credits[$i]=""
+		else
+			CLEARED_REAPPEARS=`expr $CLEARED_REAPPEARS + 1`
+		fi
+	else
+			MAJORS[$i]=""
+			MINORS[$i]=""
+			PAPER_IDS[$i]=""
+			credits[$i]=""
+	fi
+done
+foo="";for i in `seq 0 $count`;do foo="$foo ${MAJORS[$i]}";done;MAJORS=$foo
+foo="";for i in `seq 0 $count`;do foo="$foo ${MINORS[$i]}";done;MINORS=$foo
+foo="";for i in `seq 0 $count`;do foo="$foo ${PAPER_IDS[$i]}";done;PAPER_IDS=$foo
+foo="";for i in `seq 0 $count`;do foo="$foo ${credits[$i]}";done;credits=$foo
+#################################################################################
+# minors may not be numeric
+
+minors=($MINORS);majors=($MAJORS)
+count=`echo $PAPER_IDS | wc -w`;count=`expr $count - 1`
+for i in `seq 0 $count`;do MARKS[$i]=`echo "${minors[$i]}:${majors[$i]}"`;done
+
+OBTAINED_CREDITS_MARKS=0
+c=($credits);m=($MAJORS)
+for i in `seq 0 $count`
+do
+	foo=`expr ${c[$i]} \* ${m[$i]}`
+	OBTAINED_CREDITS_MARKS=`expr $OBTAINED_CREDITS_MARKS + $foo`
+done
+
+TOTAL_CREDITS_MARKS=`expr $max \* $OBTAINED_CREDITS`
+
+# Update values that don't need SQL Query
+################################################################################
+use="USE _$BATCH_OF_STUDENT;"
+ob_cr="UPDATE _${BRANCH}_${SEM}_students SET obtained_credits=obtained_credits+$OBTAINED_CREDITS,"
+mrks=""
+for i in `seq 0 $count`
+do
+	PAPER_IDS[$i]=`echo ${PAPER_IDS[$i]} | sed 's/^ *\(.*\) *$/\1/'`
+	mrks="${mrks}_${PAPER_IDS[$i]}='"${MARKS[$i]}"',"
+done
+mrks=`echo $mrks | sed 's/,$//'`
+ob_cr_mrks=",obtained_credits_marks=obtained_credits_marks+$OBTAINED_CREDITS_MARKS"
+tot_cr_mrks=",total_credits_marks=total_credits_marks+$TOTAL_CREDITS_MARKS"
+clr_re=",cleared_reappears=cleared_reappears+$CLEARED_REAPPEARS"
+rem_re=",remaining_reappears=remaining_reappears-$CLEARED_REAPPEARS"
+query="$ob_cr $mrks $ob_cr_mrks $tot_cr_mrks $clr_re $rem_re WHERE roll_no='"$ROLL"';"
+../../../../../bin/mysql --user=$user --password=$password -e "$use $query"
+################################################################################
+
+
+# Calculating those which needs SQL Query
+################################################################################
+#	OBTAINED_MARKS			# From SQL Query --> $m (Array of paper marks in form minor:major:total)
+#	NORMAL_PERCENT			# From SQL Query --> $tot
+#	CREDIT_PERCENT			# From SQL Query --> $obt_c & $tot_c
+#	REAPPEAR_SUBJECTS_REMAINING	# From SQL Query --> $re_sub_rem
+#	REAPPEAR_SUBJECTS_CLEARED	# From SQL Query --> $re_sub_clear
+
+begin="../../../../../bin/mysql --user=$user --password=$password -e"
+roll="where roll_no=$ROLL;"
+
+# INPUTS From Database
+table_structure=`$begin "$use desc _027_03_students;"`
+PIDS=`echo $table_structure | egrep -o '_[0-9]+'`;PIDS=`echo $PIDS | sed 's/ /,/g'`
+m=`$begin "$use select $PIDS from _${BRANCH}_${SEM}_students $roll" | tail -n1`;m=($m)
+tot=`$begin "$use select total_marks from _${BRANCH}_${SEM}_students $roll" | tail -n1`
+obt_c=`$begin "$use select obtained_credits_marks from _${BRANCH}_${SEM}_students $roll" | tail -n1`
+tot_c=`$begin "$use select total_credits_marks from _${BRANCH}_${SEM}_students $roll" | tail -n1`
+re_sub_rem=`$begin "$use select reappear_subjects_remaining from _${BRANCH}_${SEM}_students $roll" | tail -n1`
+re_sub_clear=`$begin "$use select reappear_subjects_cleared from _${BRANCH}_${SEM}_students $roll" | tail -n1`
+# INPUTS From Database Ends
+
+c=`echo ${#m[*]}`;c=`expr $c - 1`
+for i in `seq 0 $c`;do m[$i]=`echo ${m[$i]} | cut -d: -f3`;done
+OBTAINED_MARKS=0
+for i in `seq 0 $c`
+do
+	foo=`echo ${m[$i]} | grep '^[^0-9]'`
+	if [ ! $foo ];then m[$i]=`echo ${m[$i]} | sed 's/*//'`;OBTAINED_MARKS=`expr $OBTAINED_MARKS + ${m[$i]}`;fi
+done
+NORMAL_PERCENT=`if [ $tot -ne 0 ]; then echo "scale=2;$OBTAINED_MARKS*100/$tot" | bc; else echo 0; fi;`
+CREDIT_PERCENT=`if [ $tot_c -ne 0 ]; then echo "scale=2;$obt_c*100/$tot_c" | bc; else echo 0; fi;`
+pap_ids=($PAPER_IDS)
+for i in `seq 0 $count`;do re_sub_rem=`echo $re_sub_rem | sed "s/:${pap_ids[$i]}//"`;re_sub_clear="$re_sub_clear:${pap_ids[$i]}";done
+REAPPEAR_SUBJECTS_REMAINING="$re_sub_rem"
+REAPPEAR_SUBJECTS_CLEARED="$re_sub_clear"
+################################################################################
+
+# Update the values that needed SQL Query
+################################################################################
+ob_mks="UPDATE _${BRANCH}_${SEM}_students SET obtained_marks=$OBTAINED_MARKS"
+norm_per=",normal_percent='"$NORMAL_PERCENT"'"
+cr_per=",credit_percent='"$CREDIT_PERCENT"'"
+re_sub_re=",reappear_subjects_remaining='"$REAPPEAR_SUBJECTS_REMAINING"'"
+re_sub_clr=",reappear_subjects_cleared='"$REAPPEAR_SUBJECTS_CLEARED"'"
+query="$ob_mks $norm_per $cr_per $re_sub_re $re_sub_clr WHERE roll_no='"$ROLL"';"
+../../../../../bin/mysql --user=$user --password=$password -e "$use $query"
+################################################################################

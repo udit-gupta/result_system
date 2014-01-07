@@ -1,0 +1,76 @@
+// span_error.js
+
+
+/**
+This function adds new error message to the existing Erros
+**/
+function AddSpanError(id,error)
+{
+	error = "<br />" + error;
+	document.getElementById(id).innerHTML += error;
+}
+
+/**
+This function flushes all the errors
+**/
+function FlushSpanErrors(id)
+{
+	document.getElementById(id).innerHTML = "";
+}
+
+/**
+This function checks if the string is empty (Applied to mandatory fields)
+**/
+function empty_check(str,error)
+{   
+	if(IsEmpty(str))
+	{   
+		AddSpanError(Eid,error);
+		return false;
+	}
+	return true;
+}
+
+/**
+This function checks if the string longer
+**/
+function length_check(str,minlen,maxlen,minerror,maxerror)
+{
+	if(str.length<=minlen-1)
+	{
+		AddSpanError(Eid,minerror);
+		return false;
+	}
+	else if(str.length>maxlen)
+	{
+		AddSpanError(Eid,maxerror);
+		return false;
+	}
+	return true;
+}
+
+/**
+This function checks the name validity and flashes error
+**/
+function name_check(name,error)
+{
+	if(!IsName(name))
+	{
+		AddSpanError(Eid,error);
+		return false;
+	}
+	return true;
+}
+
+/**
+This function checks the email validity and flashes error
+**/
+function email_check(email,error)
+{
+	if(!IsEmail(email))
+	{
+		AddSpanError(Eid,error);
+		return false;
+	}
+	return true;
+}

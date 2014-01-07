@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Usage: work <sem_folder>
+
+if [ $# -ne 1 ]
+then
+        echo "Usage: work <sem_folder>"
+        exit 1
+fi
+
+folder=$1
+
+./extract_data $folder
+./extract_roll $folder
+./extract_details $folder
+
+# Roll Numbers from regular_rollnumber.txt and calling extract_regular_result
+roll=`cat $folder/regular_rollnumber.txt`
+for i in $roll;do ./extract_regular_result $folder $i;done
+
+# Roll Numbers from reappear_rollnumber.txt and calling extract_reappear_result
+roll=`cat $folder/reappear_rollnumber.txt`
+for i in $roll;do ./extract_reappear_result $folder $i;done

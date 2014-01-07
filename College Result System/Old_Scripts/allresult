@@ -1,0 +1,47 @@
+#!/bin/bash
+
+if [ $# -lt 2 ] || [ $# -gt 3 ]
+then
+	echo "Usage: $(basename $0) <pdf> <roll_list> [out_file]"
+	exit 1
+fi
+
+if [ ! -f "$1" ]
+then
+	echo "File $1 doesn't exist"
+	exit 1
+elif [ ! -f "$2" ]
+then
+	echo "File $2 doesn't exist"
+	exit 1
+fi
+
+grep pdf $1 >/dev/null
+if [ $? -ne 0 ]
+then
+	echo "$1 is not a pdf"
+	exit 1
+fi
+
+rollfile="$2"
+
+if [ ! $3 ]
+then
+	new_file_name="$1__RESULT"
+else
+	new_file_name="$3"
+fi
+
+count=0
+total=`wc -l $2 | cut -d ' ' -f1`
+for i in `cat $2`
+do
+	count=`expr $count + 1`
+	result $1 $i >>$new_file_name
+	if [ $? -eq 0 ]
+	then
+		echo "$count/$total		$i		[DONE]"
+	else
+		echo "$count/$total 	$i		[FAIL]"
+	fi
+done
